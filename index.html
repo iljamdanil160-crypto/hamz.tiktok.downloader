@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TikTok Downloader - Video, Slide & Audio</title>
+  <title>TikTok Downloader (AllOrigins)</title>
   <style>
     * { box-sizing: border-box; }
     body { font-family: system-ui, sans-serif; max-width: 550px; margin: 30px auto; padding: 15px; background: #f8f8f8; }
@@ -12,31 +12,24 @@
     button { background: #fe2c55; color: white; border: none; font-weight: bold; cursor: pointer; transition: 0.2s; }
     button:active { transform: scale(0.97); }
     #result { margin-top: 20px; text-align: center; }
-
     video, .slide-img { max-width: 100%; border-radius: 12px; margin-top: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-
     .btn-group { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 15px; }
     .btn { display: inline-block; padding: 12px 20px; border-radius: 50px; text-decoration: none; font-weight: bold; color: white; background: #25c2a0; }
     .btn.audio { background: #6c5ce7; }
-    .btn:hover { opacity: 0.9; }
-
     .slide-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 15px; }
-    .slide-item { position: relative; }
-    .slide-item img { width: 100%; border-radius: 8px; display: block; }
+    .slide-item img { width: 100%; border-radius: 8px; }
     .slide-download { display: block; margin-top: 5px; font-size: 14px; background: #eee; padding: 6px; border-radius: 20px; text-decoration: none; color: #333; }
-
     .error { color: #e74c3c; }
     .loading { color: #666; }
   </style>
 </head>
 <body>
-  <h2>📥 TikTok Downloader Ultimate</h2>
+  <h2>📥 TikTok Downloader (Slide & Audio)</h2>
   <input type="text" id="urlInput" placeholder="Tempel link video/slide TikTok..." />
   <button onclick="downloadMedia()">🔍 Cari</button>
   <div id="result"></div>
 
   <script>
-    // Fungsi bantu: download paksa (fetch blob)
     async function forceDownload(url, filename) {
       try {
         const res = await fetch(url);
@@ -50,7 +43,6 @@
         document.body.removeChild(a);
         URL.revokeObjectURL(blobUrl);
       } catch (e) {
-        alert('Gagal download, coba klik kanan save link as.');
         window.open(url, '_blank');
       }
     }
@@ -58,15 +50,29 @@
     async function downloadMedia() {
       const url = document.getElementById('urlInput').value.trim();
       const resultDiv = document.getElementById('result');
-      resultDiv.innerHTML = '<span class="loading">⏳ Mencoba mengambil konten...</span>';
+      resultDiv.innerHTML = '<span class="loading">⏳ Menghubungi server...</span>';
 
       if (!url.includes('tiktok.com') && !url.includes('vm.tiktok')) {
         resultDiv.innerHTML = '<span class="error">❌ Masukkan URL TikTok yang valid.</span>';
         return;
       }
 
-      // API prioritas (support slide & audio)
+      // API prioritas: AllOrigins + TikWM (sudah terbukti bisa)
       const apis = [
+        {
+          name: 'TikWM via AllOrigins',
+          endpoint: `https://api.allorigins.win/raw?url=${encodeURIComponent('https://www.tikwm.com/api/?url=' + encodeURIComponent(url))}`,
+          extract: (data) => {
+            if (!data || data.code !== 0) return null;
+            const type = data.data.type === 'image' ? 'slide' : 'video';
+            const result = { type };
+            if (data.data.play) result.videoUrl = data.data.play;
+            if (data.data.music) result.audioUrl = data.data.music;
+            if (data.data.images && Array.isArray(data.data.images)) result.images = data.data.images;
+            return (result.videoUrl || (result.images && result.images.length > 0)) ? result : null;
+          }
+        },
+        // Cadangan 1: TiklyDown (kalau AllOrigins down)
         {
           name: 'TiklyDown',
           endpoint: `https://api.tiklydown.me/api/download?url=${encodeURIComponent(url)}`,
@@ -81,21 +87,9 @@
             return (result.videoUrl || (result.images && result.images.length > 0)) ? result : null;
           }
         },
+        // Cadangan 2: TikMate (hanya video)
         {
-          name: 'TikWM',
-          endpoint: `https://api.allorigins.win/raw?url=${encodeURIComponent('https://www.tikwm.com/api/?url=' + encodeURIComponent(url))}`,
-          extract: (data) => {
-            if (!data || data.code !== 0) return null;
-            const type = data.data.type === 'image' ? 'slide' : 'video';
-            const result = { type };
-            if (data.data.play) result.videoUrl = data.data.play;
-            if (data.data.music) result.audioUrl = data.data.music;
-            if (data.data.images && Array.isArray(data.data.images)) result.images = data.data.images;
-            return (result.videoUrl || (result.images && result.images.length > 0)) ? result : null;
-          }
-        },
-        {
-          name: 'TikMate (fallback)',
+          name: 'TikMate',
           endpoint: `https://api.tikmate.cc/api?url=${encodeURIComponent(url)}`,
           extract: (data) => {
             if (!data || !data.video) return null;
@@ -105,26 +99,30 @@
       ];
 
       let finalData = null;
+      let usedApi = '';
+
       for (const api of apis) {
         try {
           const res = await fetch(api.endpoint);
           if (!res.ok) continue;
           const data = await res.json();
           finalData = api.extract(data);
-          if (finalData) break; // berhasil
+          if (finalData) {
+            usedApi = api.name;
+            break;
+          }
         } catch (e) {
           console.warn(`Gagal dengan ${api.name}`, e);
         }
       }
 
       if (!finalData) {
-        resultDiv.innerHTML = '<span class="error">❌ Gagal mengambil konten. Periksa link atau coba lagi nanti.</span>';
+        resultDiv.innerHTML = '<span class="error">❌ Semua server sibuk. Coba lagi 5 menit lagi.</span>';
         return;
       }
 
       // Render hasil
       if (finalData.type === 'video' && finalData.videoUrl) {
-        // Tampilkan video + tombol
         resultDiv.innerHTML = `
           <video controls src="${finalData.videoUrl}"></video>
           <div class="btn-group">
@@ -133,7 +131,6 @@
           </div>
         `;
       } else if (finalData.type === 'slide' && finalData.images && finalData.images.length > 0) {
-        // Tampilkan grid gambar
         let imagesHtml = '<div class="slide-grid">';
         finalData.images.forEach((imgUrl, i) => {
           imagesHtml += `
@@ -156,6 +153,9 @@
       } else {
         resultDiv.innerHTML = '<span class="error">❌ Konten tidak dikenali.</span>';
       }
+
+      // Opsional: kasih tahu API yang dipakai
+      // resultDiv.innerHTML += `<p style="font-size:12px; color:#999;">via ${usedApi}</p>`;
     }
   </script>
 </body>
