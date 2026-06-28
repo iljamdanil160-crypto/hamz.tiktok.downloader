@@ -3,83 +3,159 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TikTok Downloader - Tanpa Watermark (Final)</title>
+  <title>TikTok Downloader - Video, Slide & Audio</title>
   <style>
     * { box-sizing: border-box; }
-    body { font-family: system-ui, sans-serif; max-width: 500px; margin: 30px auto; padding: 15px; background: #f5f5f5; }
+    body { font-family: system-ui, sans-serif; max-width: 550px; margin: 30px auto; padding: 15px; background: #f8f8f8; }
     h2 { text-align: center; color: #111; }
     input, button { width: 100%; padding: 14px; margin: 8px 0; font-size: 16px; border-radius: 12px; border: 1px solid #ddd; }
     button { background: #fe2c55; color: white; border: none; font-weight: bold; cursor: pointer; transition: 0.2s; }
     button:active { transform: scale(0.97); }
     #result { margin-top: 20px; text-align: center; }
-    video, img { max-width: 100%; border-radius: 12px; margin-top: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-    .download-btn { display: inline-block; background: #25c2a0; padding: 12px 25px; color: white; border-radius: 50px; text-decoration: none; font-weight: bold; margin-top: 12px; }
+
+    video, .slide-img { max-width: 100%; border-radius: 12px; margin-top: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+
+    .btn-group { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 15px; }
+    .btn { display: inline-block; padding: 12px 20px; border-radius: 50px; text-decoration: none; font-weight: bold; color: white; background: #25c2a0; }
+    .btn.audio { background: #6c5ce7; }
+    .btn:hover { opacity: 0.9; }
+
+    .slide-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 15px; }
+    .slide-item { position: relative; }
+    .slide-item img { width: 100%; border-radius: 8px; display: block; }
+    .slide-download { display: block; margin-top: 5px; font-size: 14px; background: #eee; padding: 6px; border-radius: 20px; text-decoration: none; color: #333; }
+
     .error { color: #e74c3c; }
     .loading { color: #666; }
   </style>
 </head>
 <body>
-  <h2>🎬 TikTok Video Downloader</h2>
-  <input type="text" id="urlInput" placeholder="Tempel link video TikTok di sini..." />
-  <button onclick="downloadVideo()">🔍 Cari Video</button>
+  <h2>📥 TikTok Downloader Ultimate</h2>
+  <input type="text" id="urlInput" placeholder="Tempel link video/slide TikTok..." />
+  <button onclick="downloadMedia()">🔍 Cari</button>
   <div id="result"></div>
 
   <script>
-    async function downloadVideo() {
+    // Fungsi bantu: download paksa (fetch blob)
+    async function forceDownload(url, filename) {
+      try {
+        const res = await fetch(url);
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
+      } catch (e) {
+        alert('Gagal download, coba klik kanan save link as.');
+        window.open(url, '_blank');
+      }
+    }
+
+    async function downloadMedia() {
       const url = document.getElementById('urlInput').value.trim();
       const resultDiv = document.getElementById('result');
-      resultDiv.innerHTML = '<span class="loading">⏳ Mencoba mengambil video...</span>';
+      resultDiv.innerHTML = '<span class="loading">⏳ Mencoba mengambil konten...</span>';
 
       if (!url.includes('tiktok.com') && !url.includes('vm.tiktok')) {
         resultDiv.innerHTML = '<span class="error">❌ Masukkan URL TikTok yang valid.</span>';
         return;
       }
 
-      // Daftar API yang akan dicoba (berurutan)
+      // API prioritas (support slide & audio)
       const apis = [
         {
           name: 'TiklyDown',
           endpoint: `https://api.tiklydown.me/api/download?url=${encodeURIComponent(url)}`,
-          extract: (data) => data?.video?.noWatermark || data?.video?.watermark || null
+          extract: (data) => {
+            if (!data || data.error) return null;
+            const type = data.type || (data.video ? 'video' : data.images ? 'slide' : null);
+            if (!type) return null;
+            const result = { type };
+            if (data.video) result.videoUrl = data.video.noWatermark || data.video.watermark || null;
+            if (data.music) result.audioUrl = data.music;
+            if (data.images && Array.isArray(data.images)) result.images = data.images;
+            return (result.videoUrl || (result.images && result.images.length > 0)) ? result : null;
+          }
         },
         {
-          name: 'TikWM (via AllOrigins)',
+          name: 'TikWM',
           endpoint: `https://api.allorigins.win/raw?url=${encodeURIComponent('https://www.tikwm.com/api/?url=' + encodeURIComponent(url))}`,
-          extract: (data) => data?.data?.play || null
+          extract: (data) => {
+            if (!data || data.code !== 0) return null;
+            const type = data.data.type === 'image' ? 'slide' : 'video';
+            const result = { type };
+            if (data.data.play) result.videoUrl = data.data.play;
+            if (data.data.music) result.audioUrl = data.data.music;
+            if (data.data.images && Array.isArray(data.data.images)) result.images = data.data.images;
+            return (result.videoUrl || (result.images && result.images.length > 0)) ? result : null;
+          }
         },
         {
-          name: 'TikMate (langsung)',
+          name: 'TikMate (fallback)',
           endpoint: `https://api.tikmate.cc/api?url=${encodeURIComponent(url)}`,
-          extract: (data) => data?.video || null
+          extract: (data) => {
+            if (!data || !data.video) return null;
+            return { type: 'video', videoUrl: data.video, audioUrl: null };
+          }
         }
       ];
 
+      let finalData = null;
       for (const api of apis) {
         try {
-          const response = await fetch(api.endpoint);
-          if (!response.ok) continue; // coba API berikutnya
-
-          const data = await response.json();
-          const videoURL = api.extract(data);
-
-          if (videoURL) {
-            resultDiv.innerHTML = `
-              <p>✅ Video siap (via ${api.name})</p>
-              <video controls src="${videoURL}" poster=""></video>
-              <br/>
-              <a href="${videoURL}" download class="download-btn">⬇ Download Video (No WM)</a>
-            `;
-            return; // berhasil, hentikan loop
-          }
-        } catch (err) {
-          console.warn(`Gagal dengan ${api.name}:`, err);
+          const res = await fetch(api.endpoint);
+          if (!res.ok) continue;
+          const data = await res.json();
+          finalData = api.extract(data);
+          if (finalData) break; // berhasil
+        } catch (e) {
+          console.warn(`Gagal dengan ${api.name}`, e);
         }
       }
 
-      // Kalau semua gagal
-      resultDiv.innerHTML = `
-        <span class="error">❌ Semua sumber gagal mengambil video. <br> Kemungkinan link salah, video privat, atau server sedang sibuk. <br> Coba lagi 5 menit lagi.</span>
-      `;
+      if (!finalData) {
+        resultDiv.innerHTML = '<span class="error">❌ Gagal mengambil konten. Periksa link atau coba lagi nanti.</span>';
+        return;
+      }
+
+      // Render hasil
+      if (finalData.type === 'video' && finalData.videoUrl) {
+        // Tampilkan video + tombol
+        resultDiv.innerHTML = `
+          <video controls src="${finalData.videoUrl}"></video>
+          <div class="btn-group">
+            <a href="#" class="btn" onclick="forceDownload('${finalData.videoUrl}', 'tiktok_video.mp4'); return false;">⬇ Download Video (No WM)</a>
+            ${finalData.audioUrl ? `<a href="#" class="btn audio" onclick="forceDownload('${finalData.audioUrl}', 'tiktok_audio.mp3'); return false;">🎵 Download Audio</a>` : ''}
+          </div>
+        `;
+      } else if (finalData.type === 'slide' && finalData.images && finalData.images.length > 0) {
+        // Tampilkan grid gambar
+        let imagesHtml = '<div class="slide-grid">';
+        finalData.images.forEach((imgUrl, i) => {
+          imagesHtml += `
+            <div class="slide-item">
+              <img src="${imgUrl}" alt="Slide ${i+1}" class="slide-img" loading="lazy">
+              <a href="#" class="slide-download" onclick="forceDownload('${imgUrl}', 'tiktok_slide_${i+1}.jpg'); return false;">⬇ Foto ${i+1}</a>
+            </div>
+          `;
+        });
+        imagesHtml += '</div>';
+        resultDiv.innerHTML = `
+          <p>🖼 Ditemukan ${finalData.images.length} foto slide</p>
+          ${imagesHtml}
+          ${finalData.audioUrl ? `
+            <div class="btn-group" style="margin-top:15px">
+              <a href="#" class="btn audio" onclick="forceDownload('${finalData.audioUrl}', 'tiktok_slide_music.mp3'); return false;">🎵 Download Audio Slide</a>
+            </div>
+          ` : ''}
+        `;
+      } else {
+        resultDiv.innerHTML = '<span class="error">❌ Konten tidak dikenali.</span>';
+      }
     }
   </script>
 </body>
