@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TikTok Downloader - Tanpa Watermark</title>
+  <style>
+    body { font-family: Arial; max-width: 500px; margin: 50px auto; padding: 20px; }
+    input, button { width: 100%; padding: 10px; margin: 5px 0; font-size: 16px; }
+    #result { margin-top: 20px; }
+    video { max-width: 100%; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h2>Download Video TikTok (No Watermark)</h2>
+  <input type="text" id="urlInput" placeholder="Tempel link video TikTok di sini..." />
+  <button onclick="getVideo()">Cari Video</button>
+  <div id="result"></div>
+
+  <script>
+    async function getVideo() {
+      const url = document.getElementById('urlInput').value.trim();
+      const resultDiv = document.getElementById('result');
+      resultDiv.innerHTML = 'Memproses...';
+
+      if (!url.includes('tiktok.com')) {
+        resultDiv.innerHTML = '❌ Masukkan URL TikTok yang valid.';
+        return;
+      }
+
+      try {
+        // API TikWM (tidak support CORS langsung, jadi kita bungkus dengan proxy AllOrigins)
+        const apiURL = `https://api.allorigins.win/raw?url=${encodeURIComponent('https://www.tikwm.com/api/?url=' + encodeURIComponent(url))}`;
+        const response = await fetch(apiURL);
+        const data = await response.json();
+
+        if (data.code === 0 && data.data && data.data.play) {
+          const videoURL = data.data.play; // link video tanpa watermark
+          resultDiv.innerHTML = `
+            <p>✅ Video siap diunduh:</p>
+            <video controls src="${videoURL}"></video>
+            <br/>
+            <a href="${videoURL}" download target="_blank">
+              <button>⬇ Download Video (No WM)</button>
+            </a>
+          `;
+        } else {
+          resultDiv.innerHTML = '❌ Gagal mengambil video. Pastikan link benar dan video tidak privat.';
+        }
+      } catch (err) {
+        resultDiv.innerHTML = '❌ Terjadi kesalahan jaringan atau API tidak tersedia.';
+        console.error(err);
+      }
+    }
+  </script>
+</body>
+</html>
